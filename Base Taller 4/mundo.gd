@@ -1,0 +1,116 @@
+extends "res://bloques.gd"
+# Base del Taller 4. construir() arma el nivel a partir del MAPA:
+# "#" bloque, "." moneda, "o" pluma, "|" tubo.
+
+const MAPA = [
+	"################################################################",
+	"        |     |     |     |     |     |     |     |             ",
+	"        |     |           |     |     |     |     |             ",
+	"              |     o     |     |           |     |             ",
+	"        .     |                 |     .     |                   ",
+	"                    |     .     |                 .             ",
+	"        |     o     |                 |     .                   ",
+	"        |           |     |     .     |           |             ",
+	"        |     |     |     |           |     |     |             ",
+	"################################################################",
+]
+
+var moneda_escena = preload("res://moneda.tscn")
+var pluma_escena = preload("res://pluma.tscn")
+var tubo_escena = preload("res://tubo.tscn")
+
+var puntaje = 0
+var modo_poder = false
+var vidas = 3
+
+@onready var jugador = $Pajaro
+
+
+func _ready():
+	construir()
+	actualizar_hud()
+	
+	# Conectar las señales de cada moneda y pluma
+	for item in get_tree().get_nodes_in_group("monedas"):
+		item.recogido.connect(_on_recogido)
+	
+	# Conectar las señales de cada tubo
+	for enemigo in get_tree().get_nodes_in_group("enemigos"):
+		enemigo.toco_al_jugador.connect(_on_enemigo_toco)
+	
+	# Conectar el timer del poder
+	$TimerPoder.timeout.connect(_on_timer_poder_timeout)
+
+
+func _on_recogido(valor, da_poder):
+	puntaje += valor
+	actualizar_hud()
+	
+	if da_poder:
+		activar_poder()
+	
+	# Verificación de victoria (el grupo queda vacío porque la moneda se removió antes de emitir)
+	if get_tree().get_nodes_in_group("monedas").is_empty():
+		$HUD/Mensaje.text = "¡Pasaste todos los huecos!"
+
+
+func activar_poder():
+	modo_poder = true
+	print("poder: sí")
+	$TimerPoder.start()
+	# Extra 2: Tubos transparentes durante el poder
+	for enemigo in get_tree().get_nodes_in_group("enemigos"):
+		enemigo.modulate.a = 0.4
+
+
+func _on_timer_poder_timeout():
+	modo_poder = false
+	print("poder: no")
+	# Extra 2: Restaurar opacidad de los tubos
+	for enemigo in get_tree().get_nodes_in_group("enemigos"):
+		enemigo.modulate.a = 1.0
+
+
+func _on_enemigo_toco(_enemigo):
+	# 1. Si el pájaro está muriendo, o el juego ya terminó, no hagan nada.
+	if jugador.muriendo or vidas <= 0:
+		return
+	
+	# 2. Con poder: el tubo no hace daño: no pasa nada.
+	if modo_poder:
+		return
+	
+	# 3. Sin poder:
+	# Una vida menos.
+	vidas -= 1
+	actualizar_hud()
+	
+	# Si quedan 0, "Perdiste" y el pájaro deja de moverse.
+	if vidas <= 0:
+		$HUD/Mensaje.text = "Perdiste"
+		jugador.set_physics_process(false)
+	else:
+		# Si no, morir().
+		jugador.morir()
+
+
+func actualizar_hud():
+	$HUD/Puntaje.text = "Puntaje: %d   Vidas: %d" % [puntaje, vidas]
+
+
+func construir():
+	construir_bloques(MAPA, Color(0.2, 0.22, 0.3, 1))
+	for fila in MAPA.size():
+		for col in MAPA[fila].length():
+			var escena = null
+			match MAPA[fila][col]:
+				".":
+					escena = moneda_escena
+				"o":
+					escena = pluma_escena
+				"|":
+					escena = tubo_escena
+			if escena:
+				var nodo = escena.instantiate()
+				nodo.position = Vector2(col + 0.5, fila + 0.5) * CELDA
+				$Mapa.add_child(nodo)
